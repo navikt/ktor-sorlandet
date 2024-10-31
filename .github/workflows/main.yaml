@@ -1,0 +1,47 @@
+name: "Build and deploy ktor-sorlandet"
+on:
+  push:
+    branches:
+      - "main"
+permissions:
+  actions: read
+  contents: write
+  packages: write
+  id-token: write
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+      - name: compile and run tests
+        run: "./gradlew shadowJar"
+      - name: docker-build-push
+        uses: nais/docker-build-push@v0
+        env:
+          ACTIONS_RUNTIME_TOKEN: ${{ secrets.GITHUB_TOKEN  }}
+        id: docker-build-push
+        with:
+          team: utvikling-admin
+          identity_provider: "${{ secrets.NAIS_WORKLOAD_IDENTITY_PROVIDER }}"
+          project_id: "${{ vars.NAIS_MANAGEMENT_PROJECT_ID }}"
+    outputs:
+      image: "${{ steps.docker-build-push.outputs.image }}"
+  deployToDev:
+    name: Deploy to dev
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to dev-gcp
+        uses: nais/deploy/actions/deploy@v2
+        env:
+          "CLUSTER": dev-gcp
+          "RESOURCE": .nais/dev.yaml
+          "VAR": "image=${{ needs.build.outputs.image }}"
